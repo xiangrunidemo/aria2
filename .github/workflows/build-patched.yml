@@ -35,7 +35,6 @@ jobs:
         run: |
           curl -L -o aria2.tar.gz https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0.tar.gz
           tar xzf aria2.tar.gz
-          ls
 
       - name: Patch 16 connection limit
         shell: msys2 {0}
@@ -64,8 +63,19 @@ jobs:
         working-directory: ${{ github.workspace }}/aria2-1.37.0
         run: ./src/aria2c.exe --version
 
+      - name: Collect files
+        shell: msys2 {0}
+        working-directory: ${{ github.workspace }}
+        run: |
+          mkdir -p dist
+          cp aria2-1.37.0/src/aria2c.exe dist/
+          cp /ucrt64/bin/libgcc_s_seh-1.dll dist/
+          cp /ucrt64/bin/libstdc++-6.dll dist/
+          cp /ucrt64/bin/libwinpthread-1.dll dist/
+          ls -la dist/
+
       - uses: actions/upload-artifact@v4
         with:
           name: aria2c-patched-win64
-          path: ${{ github.workspace }}/aria2-1.37.0/src/aria2c.exe
+          path: ${{ github.workspace }}/dist/*
           if-no-files-found: error
