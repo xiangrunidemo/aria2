@@ -25,18 +25,28 @@ jobs:
             mingw-w64-ucrt-x86_64-openssl
             mingw-w64-ucrt-x86_64-libxml2
             mingw-w64-ucrt-x86_64-gettext
-            autoconf
-            automake
-            libtool
-            pkg-config
             make
+            pkg-config
+            curl
 
-      - name: Autoreconf
+      - name: Download aria2 release
         shell: msys2 {0}
-        run: autoreconf -i
+        working-directory: ${{ github.workspace }}
+        run: |
+          curl -L -o aria2.tar.gz https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0.tar.gz
+          tar xzf aria2.tar.gz
+          ls
+
+      - name: Patch 16 connection limit
+        shell: msys2 {0}
+        working-directory: ${{ github.workspace }}/aria2-1.37.0
+        run: |
+          sed -i 's/"1", 1, 16,/ "1", 1, 128,/g' src/OptionHandlerFactory.cc
+          grep -n "128" src/OptionHandlerFactory.cc
 
       - name: Configure
         shell: msys2 {0}
+        working-directory: ${{ github.workspace }}/aria2-1.37.0
         run: |
           ./configure \
             --host=x86_64-w64-mingw32 \
@@ -46,14 +56,16 @@ jobs:
 
       - name: Build
         shell: msys2 {0}
+        working-directory: ${{ github.workspace }}/aria2-1.37.0
         run: make -j2
 
       - name: Verify
         shell: msys2 {0}
+        working-directory: ${{ github.workspace }}/aria2-1.37.0
         run: ./src/aria2c.exe --version
 
       - uses: actions/upload-artifact@v4
         with:
           name: aria2c-patched-win64
-          path: src/aria2c.exe
+          path: ${{ github.workspace }}/aria2-1.37.0/src/aria2c.exe
           if-no-files-found: error
