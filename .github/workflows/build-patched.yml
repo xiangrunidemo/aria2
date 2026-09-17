@@ -1,75 +1,69 @@
-name: Build aria2 patched
+name: Build aria2 Windows exe
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:           # 手动点 Run workflow
+  push:
+    tags: ['v*']                # 在你仓库打 v 开头的 tag → 自动发版
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: i686-w64-mingw32      # 32 位
+            arch: win32
+          - host: x86_64-w64-mingw32    # 64 位
+            arch: win64
     steps:
-      - uses: actions/checkout@v4
+      - name: 拉取官方 Dockerfile.mingw
+        run: |
+          curl -fsSL -o Dockerfile.mingw \
+            https://raw.githubusercontent.com/aria2/aria2/master/Dockerfile.mingw
+          echo "::group::Dockerfile.mingw"; cat Dockerfile.mingw; echo "::endgroup::"
 
-      - uses: msys2/setup-msys2@v2
+      - name: 构建 aria2c.exe (${{ matrix.arch }})
+        run: |
+          docker build \
+            --build-arg HOST=${{ matrix.host }} \
+            -t aria2-mingw-${{ matrix.arch }} \
+            - < Dockerfile.mingw
+          docker create --name tmp aria2-mingw-${{ matrix.arch }}
+          docker cp tmp:/aria2/src/aria2c.exe ./aria2c-${{ matrix.arch }}.exe
+          docker rm tmp
+          file aria2c-${{ matrix.arch }}.exe
+          ls -lh aria2c-${{ matrix.arch }}.exe
+
+      - name: 上传 artifact
+        uses: actions/upload-artifact@v4
         with:
-          msystem: UCRT64
-          update: true
-          install: >-
-            git
-            base-devel
-            mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-c-ares
-            mingw-w64-ucrt-x86_64-expat
-            mingw-w64-ucrt-x86_64-sqlite3
-            mingw-w64-ucrt-x86_64-zlib
-            mingw-w64-ucrt-x86_64-libssh2
-            mingw-w64-ucrt-x86_64-openssl
-            mingw-w64-ucrt-x86_64-libxml2
-            mingw-w64-ucrt-x86_64-gettext
-            make
-            pkg-config
-            curl
-
-      - name: Download aria2 release
-        shell: msys2 {0}
-        working-directory: ${{ github.workspace }}
-        run: |
-          curl -L -o aria2.tar.gz https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0.tar.gz
-          tar xzf aria2.tar.gz
-
-      - name: Patch 16 connection limit
-        shell: msys2 {0}
-        working-directory: ${{ github.workspace }}/aria2-1.37.0
-        run: |
-          sed -i 's/"1", 1, 16,/ "1", 1, 128,/g' src/OptionHandlerFactory.cc
-          grep -n "128" src/OptionHandlerFactory.cc
-
-      - name: Configure
-        shell: msys2 {0}
-        working-directory: ${{ github.workspace }}/aria2-1.37.0
-        run: |
-          ./configure --host=x86_64-w64-mingw32
-
-      - name: Build
-        shell: msys2 {0}
-        working-directory: ${{ github.workspace }}/aria2-1.37.0
-        run: make -j2
-
-      - name: Verify
-        shell: msys2 {0}
-        working-directory: ${{ github.workspace }}/aria2-1.37.0
-        run: ./src/aria2c.exe --version
-
-      - name: Collect files
-        shell: msys2 {0}
-        working-directory: ${{ github.workspace }}
-        run: |
-          mkdir -p dist
-          cp aria2-1.37.0/src/aria2c.exe dist/
-          ldd aria2-1.37.0/src/aria2c.exe | grep /ucrt64/bin | awk '{print $3}' | while read dll; do cp "$dll" dist/; done
-          ls -la dist/
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: aria2c-patched-win64
-          path: ${{ github.workspace }}/dist/*
+          name: aria2c-${{ matrix.arch }}
+          path: aria2c-${{ matrix.arch }}.exe
           if-no-files-found: error
+          retention-days: 30
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write              # 发 Release 需要写权限
+    steps:
+      - name: 下载所有 artifact
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 汇总 exe
+        run: |
+          mkdir release
+          find artifacts -name '*.exe' -exec cp {} release/ \;
+          ls -lh release/
+
+      - name: 创建 Release 并上传
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.exe
+          generate_release_notes: true
+          name: aria2c ${{ github.ref_name }}
