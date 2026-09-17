@@ -65,10 +65,7 @@ jobs:
         run: |
           mkdir -p dist
           cp aria2-1.37.0/src/aria2c.exe dist/
-          # 找出所有依赖的 DLL 并复制
-        ldd aria2-1.37.0/src/aria2c.exe | grep /ucrt64/bin | awk '{print $3}' | while read dll; do
-            cp "$dll" dist/
-          done
+          ldd aria2-1.37.0/src/aria2c.exe | grep /ucrt64/bin | awk '{print $3}' | while read dll; do cp "$dll" dist/; done
           ls -la dist/
 
       - uses: actions/upload-artifact@v4
