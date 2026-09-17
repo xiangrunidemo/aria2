@@ -1,0 +1,58 @@
+name: Build aria2 patched
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            base-devel
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-c-ares
+            mingw-w64-ucrt-x86_64-expat
+            mingw-w64-ucrt-x86_64-sqlite3
+            mingw-w64-ucrt-x86_64-zlib
+            mingw-w64-ucrt-x86_64-libssh2
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-libxml2
+            autoconf
+            automake
+            libtool
+            pkg-config
+            make
+
+      - name: Autoreconf
+        shell: msys2 {0}
+        run: autoreconf -i
+
+      - name: Configure
+        shell: msys2 {0}
+        run: |
+          ./configure \
+            --host=x86_64-w64-mingw32 \
+            --enable-static \
+            --disable-shared \
+            LDFLAGS="-static"
+
+      - name: Build
+        shell: msys2 {0}
+        run: make -j2
+
+      - name: Verify
+        shell: msys2 {0}
+        run: ./src/aria2c.exe --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aria2c-patched-win64
+          path: src/aria2c.exe
+          if-no-files-found: error
