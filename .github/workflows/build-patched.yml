@@ -1,9 +1,9 @@
-name: Build aria2 Windows exe
+name: Build aria2 (patched, 256 conn) Windows exe
 
 on:
-  workflow_dispatch:           # 手动点 Run workflow
+  workflow_dispatch:
   push:
-    tags: ['v*']                # 在你仓库打 v 开头的 tag → 自动发版
+    tags: ['v*']
 
 jobs:
   build:
@@ -17,16 +17,27 @@ jobs:
           - host: x86_64-w64-mingw32    # 64 位
             arch: win64
     steps:
-      - name: 拉取官方 Dockerfile.mingw
+      - name: Checkout fork（拿 fork 自己的 Dockerfile.mingw）
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: 让 Dockerfile.mingw 编译 fork 自己的代码
         run: |
-          curl -fsSL -o Dockerfile.mingw \
-            https://raw.githubusercontent.com/aria2/aria2/master/Dockerfile.mingw
-          echo "::group::Dockerfile.mingw"; cat Dockerfile.mingw; echo "::endgroup::"
+          # Dockerfile.mingw 默认 clone 上游 aria2/aria2，改成 clone 本 fork
+          sed -i \
+            -e 's|api.github.com/repos/aria2/aria2|api.github.com/repos/xiangrunidemo/aria2|g' \
+            -e 's|https://github.com/aria2/aria2|https://github.com/xiangrunidemo/aria2|g' \
+            Dockerfile.mingw
+          echo "=== 改后的 clone 行 ==="
+          grep -n "git clone\|api.github" Dockerfile.mingw
 
       - name: 构建 aria2c.exe (${{ matrix.arch }})
         run: |
           docker build \
             --build-arg HOST=${{ matrix.host }} \
+            --build-arg ARIA2_VERSION=master \
+            --build-arg ARIA2_REF=refs/heads/master \
             -t aria2-mingw-${{ matrix.arch }} \
             - < Dockerfile.mingw
           docker create --name tmp aria2-mingw-${{ matrix.arch }}
@@ -48,22 +59,17 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
-      contents: write              # 发 Release 需要写权限
+      contents: write
     steps:
-      - name: 下载所有 artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
-
-      - name: 汇总 exe
-        run: |
+      - run: |
           mkdir release
           find artifacts -name '*.exe' -exec cp {} release/ \;
           ls -lh release/
-
-      - name: 创建 Release 并上传
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           files: release/*.exe
+          name: aria2c (256conn) ${{ github.ref_name }}
           generate_release_notes: true
-          name: aria2c ${{ github.ref_name }}
